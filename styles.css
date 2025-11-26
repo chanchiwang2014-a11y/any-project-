@@ -1,0 +1,223 @@
+/* Global Netflix-inspired palette and typography */
+:root {
+  --bg: #0f1115;
+  --panel: rgba(26, 29, 35, 0.9);
+  --accent: #e50914;
+  --text: #f5f5f5;
+  --muted: #9ca3af;
+  --track: #2b2f36;
+  --buffer: #3b414c;
+  --thumb: #ffffff;
+  --radius: 14px;
+  --shadow: 0 18px 45px rgba(0, 0, 0, 0.45);
+  --transition: 0.2s ease;
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: radial-gradient(circle at 20% 20%, rgba(229, 9, 20, 0.08), transparent 30%),
+    radial-gradient(circle at 80% 0%, rgba(229, 9, 20, 0.12), transparent 26%),
+    var(--bg);
+  color: var(--text);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 32px;
+}
+
+.page {
+  width: 100%;
+  max-width: 1100px;
+}
+
+.player-shell {
+  background: var(--panel);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  position: relative;
+}
+
+.player {
+  width: 100%;
+  height: 60vh;
+  background: #000;
+  display: block;
+  border: none;
+}
+
+.controls {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 14px 18px 18px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0) 0%, rgba(10, 10, 12, 0.92) 65%);
+}
+
+.controls-left,
+.controls-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.control-btn {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--text);
+  padding: 10px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  transition: transform var(--transition), background var(--transition), border-color var(--transition);
+}
+
+.control-btn:hover {
+  transform: translateY(-1px);
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+.icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.time {
+  min-width: 70px;
+  text-align: center;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.timeline {
+  position: relative;
+  flex: 1;
+  height: 44px;
+  display: flex;
+  align-items: center;
+}
+
+.buffer-bar,
+.progress-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 8px;
+  border-radius: 999px;
+}
+
+.buffer-bar {
+  background: var(--track);
+  overflow: hidden;
+}
+
+.buffered-fill {
+  height: 100%;
+  width: 0;
+  background: var(--buffer);
+}
+
+.progress-bar {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.2);
+}
+
+.progress-fill {
+  height: 100%;
+  width: 0;
+  background: linear-gradient(90deg, #f15b2a, var(--accent));
+  border-radius: inherit;
+  transition: width 0.08s linear;
+}
+
+.progress-thumb {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--thumb);
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.35);
+  transition: transform var(--transition), box-shadow var(--transition);
+}
+
+.timeline:hover .progress-thumb {
+  transform: translate(-50%, -50%) scale(1.08);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.45);
+}
+
+.seek-input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.preview {
+  position: absolute;
+  top: -115px;
+  width: 200px;
+  background: #181c23;
+  border-radius: 12px;
+  padding: 10px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  transform: translateX(-50%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--transition), transform var(--transition);
+}
+
+.preview-thumb {
+  height: 90px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, rgba(229, 9, 20, 0.3), rgba(46, 58, 80, 0.9));
+}
+
+.preview-time {
+  margin-top: 8px;
+  font-size: 14px;
+  color: var(--text);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.timeline:hover #preview {
+  opacity: 1;
+  transform: translate(-50%, -6px);
+}
+
+.controls-right {
+  margin-left: auto;
+}
+
+@media (max-width: 768px) {
+  .controls {
+    flex-wrap: wrap;
+  }
+
+  .controls-left,
+  .controls-right {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .timeline {
+    width: 100%;
+    order: 3;
+  }
+}
