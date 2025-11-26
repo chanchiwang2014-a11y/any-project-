@@ -1,0 +1,379 @@
+const searchBox = document.getElementById('searchBox');
+    const favoriteFilterBtn = document.getElementById('favoriteFilterBtn');
+    const sortSelect = document.getElementById('sortSelect');
+
+    const prevBtn = document.getElementById('prevBtn');
+    const playPauseBtn = document.getElementById('playPauseBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const nextBtn = document.getElementById('nextBtn');
+    const modeBtn = document.getElementById('modeBtn');
+    const modeLabel = document.getElementById('modeLabel');
+
+    const progress = document.getElementById('progress');
+    const currentTimeLabel = document.getElementById('currentTime');
+    const durationLabel = document.getElementById('duration');
+    const previewLabel = document.getElementById('preview');
+
+    const muteBtn = document.getElementById('muteBtn');
+    const volumeSlider = document.getElementById('volume');
+    const volumeValue = document.getElementById('volumeValue');
+
+    const nowTitle = document.getElementById('nowTitle');
+    const nowSub = document.getElementById('nowSub');
+    const playlistEl = document.getElementById('playlist');
+    const emptyState = document.getElementById('emptyState');
+
+    const STORAGE_KEY = 'modern-music-player';
+    const DB_NAME = 'modern-music-player';
+    const DB_STORE = 'songs';
+
+    let songs = []; // {id, title, artist, url, size, duration, favorite, addedAt}␊
+    let currentIndex = -1;
+    let isSeeking = false;
+    let playMode = 'repeat-all'; // repeat-all | repeat-one | shuffle
+    let showFavoritesOnly = false;
+    let favoritesSet = new Set();
+    let sortBy = 'added';
+    let lastKnownTitle = '';
+    let resumeTime = 0;
+
+    function formatTime(sec) {
+      if (!Number.isFinite(sec) || sec < 0) return '00:00';
+      const m = Math.floor(sec / 60).toString().padStart(2, '0');
+      const s = Math.floor(sec % 60).toString().padStart(2, '0');
+      return `${m}:${s}`;
+    }
+
+    function showMessage(text) {
+      message.textContent = text || '';
+    }
+
+    async function openDB() {
+      return new Promise((resolve, reject) => {
+        const req = indexedDB.open(DB_NAME, 1);
+        req.onupgradeneeded = () => {
+          const db = req.result;
+          if (!db.objectStoreNames.contains(DB_STORE)) {
+            db.createObjectStore(DB_STORE, { keyPath: 'id' });
+          }
+        };
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+    }
+
+    async function saveSongToDB(song, blob) {
+      const db = await openDB();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(DB_STORE, 'readwrite');
+        tx.objectStore(DB_STORE).put({ ...song, blob });
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+    }
+
+    async function loadSongsFromDB() {
+      const db = await openDB();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(DB_STORE, 'readonly');
+        const req = tx.objectStore(DB_STORE).getAll();
+        req.onsuccess = () => {
+          const stored = req.result || [];
+          stored.forEach(record => {
+            const { blob, ...meta } = record;
+            const url = URL.createObjectURL(blob);
+            const song = { ...meta, url };
+            songs.push(song);
+            if (song.favorite) favoritesSet.add(song.title);
+            loadDuration(song);
+          });
+          resolve();
+        };
+        req.onerror = () => reject(req.error);
+      });
+    }
+
+    function saveSettings() {
+      const data = {
+        playMode,
+        showFavoritesOnly,
+        favorites: Array.from(favoritesSet),
+        volume: audio.volume,
+        muted: audio.muted,
+        sortBy,
+        lastSong: songs[currentIndex]?.title || lastKnownTitle,
+        lastTime: audio.currentTime || resumeTime || 0,
+      };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    }
+
+    function loadSettings() {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return;
+      try {
+        const data = JSON.parse(raw);
+        playMode = data.playMode || playMode;
+        showFavoritesOnly = !!data.showFavoritesOnly;
+        favoritesSet = new Set(data.favorites || []);
+        sortBy = data.sortBy || 'added';
+        audio.volume = Number.isFinite(data.volume) ? data.volume : 0.8;
+        audio.muted = !!data.muted;
+        lastKnownTitle = data.lastSong || '';
+@@ -333,103 +380,93 @@
+      }
+    }
+
+    function updateModeLabel() {
+      const text = {
+        'repeat-all': '全列表循環',
+        'repeat-one': '單曲循環',
+        'shuffle': '隨機播放',
+      }[playMode];
+      modeLabel.textContent = text;
+    }
+
+    function updateMuteUI() {
+      muteBtn.textContent = audio.muted ? '🔈 取消靜音' : '🔇 靜音';
+      if (audio.muted) {
+        volumeValue.textContent = '0%';
+      } else {
+        updateVolumeLabel();
+      }
+    }
+
+    function updateVolumeLabel() {
+      volumeValue.textContent = `${Math.round(audio.volume * 100)}%`;
+    }
+
+    async function handleFiles(files) {
+      if (!files || !files.length) {
+        showMessage('請先選擇音樂檔案');
+        return;
+      }
+
+      const invalid = [];
+      for (const [idx, file] of Array.from(files).entries()) {
+        const name = file.name.toLowerCase();
+        const isAudio = (file.type && file.type.startsWith('audio/')) || /(mp3|wav|flac|m4a|aac|ogg)$/i.test(name);
+        if (!isAudio) {
+          invalid.push(file.name);
+          continue;
+        }
+        const url = URL.createObjectURL(file);
+        const title = file.name.replace(/\.[^/.]+$/, '');
+        const song = {
+          id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${idx}`,
+          title,
+          artist: '未知歌手',
+          url,
+          size: file.size,
+          duration: null,
+          favorite: favoritesSet.has(title),
+          addedAt: Date.now() + idx,
+        };
+        songs.push(song);
+        loadDuration(song);
+        await saveSongToDB(song, file);
+      }
+
+      if (!songs.length) {
+        showMessage(invalid.length ? '不支援的格式已被略過' : '請選擇音樂檔案');
+        renderPlaylist();
+        return;
+      }
+
+      currentIndex = songs.length - Array.from(files).length;
+      showMessage(invalid.length ? `已略過 ${invalid.length} 個不支援格式` : '');
+      renderPlaylist();
+      loadSong(currentIndex, false);
+      saveSettings();
+    }
+
+    function loadDuration(song) {
+      const temp = new Audio();
+      temp.preload = 'metadata';
+      temp.src = song.url;
+      temp.addEventListener('loadedmetadata', () => {
+        song.duration = temp.duration;
+        renderPlaylist();
+      });
+    }
+
+    function renderPlaylist() {
+      playlistEl.innerHTML = '';
+      const query = searchBox.value.trim().toLowerCase();
+      const filtered = songs
+        .filter(s => (!showFavoritesOnly || s.favorite))
+        .filter(s => !query || s.title.toLowerCase().includes(query) || s.artist.toLowerCase().includes(query));
+
+      filtered.sort((a, b) => {
+        if (sortBy === 'title') return a.title.localeCompare(b.title, 'zh-HK');
+        return a.addedAt - b.addedAt;
+      });
+
+      if (!filtered.length) {
+        emptyState.style.display = 'block';
+@@ -474,74 +511,74 @@
+
+        fav.addEventListener('click', (e) => {
+          e.stopPropagation();
+          song.favorite = !song.favorite;
+          fav.innerHTML = song.favorite ? '★' : '☆';
+          fav.classList.toggle('active', song.favorite);
+          if (song.favorite) favoritesSet.add(song.title); else favoritesSet.delete(song.title);
+          saveSettings();
+        });
+
+        right.appendChild(pill);
+        right.appendChild(fav);
+
+        card.appendChild(meta);
+        card.appendChild(right);
+
+        card.addEventListener('click', () => {
+          const idx = songs.findIndex(s => s.id === song.id);
+          if (idx >= 0) playAt(idx);
+        });
+
+        playlistEl.appendChild(card);
+      });
+    }
+
+    function loadSong(index, autoPlay = true) {␊
+      if (index < 0 || index >= songs.length) return;␊
+      currentIndex = index;␊
+      const song = songs[index];␊
+      audio.src = song.url;␊
+      nowTitle.textContent = song.title;␊
+      nowSub.textContent = song.artist;␊
+      document.title = `${song.title} | 音樂播放器`;␊
+      const shouldResume = song.title === lastKnownTitle && resumeTime > 0;
+      if (shouldResume) {
+        const seekSafely = () => {
+          const target = Math.min(audio.duration || resumeTime, resumeTime);
+          if (Number.isFinite(target)) audio.currentTime = target;
+          resumeTime = 0;
+        };
+        if (audio.readyState >= 1) seekSafely();
+        else audio.addEventListener('loadedmetadata', seekSafely, { once: true });
+      }
+      lastKnownTitle = song.title;
+      if (song.duration) durationLabel.textContent = formatTime(song.duration);␊
+      if (autoPlay) audio.play();␊
+      renderPlaylist();␊
+      saveSettings();␊
+    }␊
+
+    function playAt(index) {
+      loadSong(index, true);
+    }
+
+    function togglePlay() {
+      if (!audio.src) {
+        if (songs.length) loadSong(0, true);
+        return;
+      }
+      if (audio.paused) audio.play();
+      else audio.pause();
+    }
+
+    function stopPlayback() {
+      if (!audio.src) return;
+      audio.pause();
+      audio.currentTime = 0;
+      audio.dispatchEvent(new Event('timeupdate'));
+    }
+
+    function nextSong(auto = true) {
+      if (!songs.length) return;
+      if (playMode === 'repeat-one') {
+        audio.currentTime = 0;
+@@ -638,78 +675,88 @@
+      const value = Number(volumeSlider.value);
+      audio.volume = Math.max(0, Math.min(1, value));
+      if (audio.volume === 0) audio.muted = true; else audio.muted = false;
+      updateVolumeLabel();
+      updateMuteUI();
+      saveSettings();
+    });
+
+    muteBtn.addEventListener('click', () => {
+      audio.muted = !audio.muted;
+      if (!audio.muted && audio.volume === 0) {
+        audio.volume = 0.5;
+        volumeSlider.value = 0.5;
+      }
+      volumeSlider.value = audio.muted ? 0 : audio.volume;
+      updateMuteUI();
+      saveSettings();
+    });
+
+    playPauseBtn.addEventListener('click', togglePlay);
+    stopBtn.addEventListener('click', stopPlayback);
+    nextBtn.addEventListener('click', () => nextSong(true));
+    prevBtn.addEventListener('click', prevSong);
+    modeBtn.addEventListener('click', cycleMode);
+
+    uploadBtn.addEventListener('click', () => handleFiles(fileInput.files));␊
+    fileInput.addEventListener('change', () => handleFiles(fileInput.files));␊
+
+    searchBox.addEventListener('input', () => renderPlaylist());
+    favoriteFilterBtn.addEventListener('click', () => {
+      showFavoritesOnly = !showFavoritesOnly;
+      favoriteFilterBtn.textContent = showFavoritesOnly ? '只看我的最愛' : '全部歌曲';
+      renderPlaylist();
+      saveSettings();
+    });
+    sortSelect.addEventListener('change', () => {
+      sortBy = sortSelect.value;
+      renderPlaylist();
+      saveSettings();
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if (['INPUT', 'TEXTAREA'].includes(e.target.tagName)) return;
+      if (e.code === 'Space') {
+        e.preventDefault();
+        togglePlay();
+      }
+      if (e.code === 'ArrowRight') {
+        audio.currentTime = Math.min(audio.duration || 0, audio.currentTime + 5);
+      }
+      if (e.code === 'ArrowLeft') {
+        audio.currentTime = Math.max(0, audio.currentTime - 5);
+      }
+      if (e.code === 'ArrowUp') {
+        e.preventDefault();
+        const newVol = Math.min(1, audio.volume + 0.05);
+        volumeSlider.value = newVol;
+        audio.volume = newVol;
+        audio.muted = false;
+        updateVolumeLabel();
+        saveSettings();
+      }
+      if (e.code === 'ArrowDown') {
+        e.preventDefault();
+        const newVol = Math.max(0, audio.volume - 0.05);
+        volumeSlider.value = newVol;
+        audio.volume = newVol;
+        if (newVol === 0) audio.muted = true;
+        updateMuteUI();
+        saveSettings();
+      }
+    });
+
+    async function init() {
+      loadSettings();
+      await loadSongsFromDB();
+      if (songs.length) {
+        const idx = lastKnownTitle ? songs.findIndex(s => s.title === lastKnownTitle) : 0;
+        const target = idx >= 0 ? idx : 0;
+        loadSong(target, false);
+      }
+      renderPlaylist();
+    }
+
+    init();
+  </script>
+</body>
+</html>
